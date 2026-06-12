@@ -1,0 +1,26 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: plex-react-staging
+
+resources:
+  - app-volumes.yaml
+  - ../../base
+  - namespace.yaml
+  - config-patch.yaml
+
+# Add production-specific patches here
+patches:
+  - path: ingress-patch.yaml
+  - path: seaweedfs-managed-delete-service.yaml
+  - path: seaweedfs-managed-delete-deployment.yaml
+  - path: redis-managed-delete-service.yaml
+  - path: redis-managed-delete-deployment.yaml
+  - path: mariadb-managed-delete-service.yaml
+  - path: mariadb-managed-delete-deployment.yaml
+  - path: deployment-patch.yaml
+
+images:
+  - name: plex-react:latest
+    newName: plex-react
+    newTag: staging-latest

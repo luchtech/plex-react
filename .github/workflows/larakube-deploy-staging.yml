@@ -1,8 +1,8 @@
-name: LaraKube Cloud Pilot (Deploy to production)
+name: LaraKube Cloud Pilot (Deploy to staging)
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "develop" ]
   workflow_dispatch:
 
 env:
@@ -26,18 +26,18 @@ jobs:
         id: secrets
         run: |
           # Robust resolution for KUBECONFIG
-          FINAL_KUBE="${{ secrets.PRODUCTION_KUBECONFIG }}"
+          FINAL_KUBE="${{ secrets.STAGING_KUBECONFIG }}"
           
           # Robust resolution for ENV_FILE
-          FINAL_ENV="${{ secrets.PRODUCTION_ENV_FILE_BASE64 }}"
+          FINAL_ENV="${{ secrets.STAGING_ENV_FILE_BASE64 }}"
           
           if [ -z "$FINAL_KUBE" ]; then
-            echo "::error::PRODUCTION_KUBECONFIG is missing! Run 'larakube cloud:configure:gha' locally."
+            echo "::error::STAGING_KUBECONFIG is missing! Run 'larakube cloud:configure:gha' locally."
             exit 1
           fi
 
           if [ -z "$FINAL_ENV" ]; then
-            echo "::error::PRODUCTION_ENV_FILE_BASE64 is missing! Run 'larakube cloud:configure:gha' locally."
+            echo "::error::STAGING_ENV_FILE_BASE64 is missing! Run 'larakube cloud:configure:gha' locally."
             exit 1
           fi
           
@@ -105,9 +105,9 @@ jobs:
 
       - name: 💎 Inject VITE vars for asset baking
         run: |
-          echo "VITE_APP_URL=https://plex-react.luchtech.dev" >> .env
-          echo "VITE_ASSET_URL=https://plex-react.luchtech.dev" >> .env
-          echo "VITE_REVERB_HOST=plex-react-ws.luchtech.dev" >> .env
+          echo "VITE_APP_URL=https://plex-react-stg.luchtech.dev" >> .env
+          echo "VITE_ASSET_URL=https://plex-react-stg.luchtech.dev" >> .env
+          echo "VITE_REVERB_HOST=plex-react-stg-ws.luchtech.dev" >> .env
           echo "VITE_REVERB_PORT=443" >> .env
           echo "VITE_REVERB_SCHEME=https" >> .env
           REVERB_APP_KEY=$(grep -E '^REVERB_APP_KEY=' .env | head -1 | cut -d= -f2-)
@@ -127,17 +127,17 @@ jobs:
       - name: 🏗 Prepare Manifests & Deploy
         run: |
           # 1. Update ConfigMap/Secret
-          kubectl create configmap laravel-config -n plex-react-production --from-env-file=.env --dry-run=client -o yaml | kubectl apply -f -
-          kubectl create secret generic laravel-secrets -n plex-react-production --from-env-file=.env --dry-run=client -o yaml | kubectl apply -f -
+          kubectl create configmap laravel-config -n plex-react-staging --from-env-file=.env --dry-run=client -o yaml | kubectl apply -f -
+          kubectl create secret generic laravel-secrets -n plex-react-staging --from-env-file=.env --dry-run=client -o yaml | kubectl apply -f -
 
           # 2. Deploy via Kustomize. The namespace already exists (created at
           #    `cloud:configure:gha` time), and this runner uses a NAMESPACE-SCOPED
           #    credential — so strip the cluster-scoped Namespace doc, which the
           #    scoped ServiceAccount can't apply.
-          cd .infrastructure/k8s/overlays/production
-          kubectl kustomize . | sed "s|image: plex-react:production-latest|image: ${{ env.REGISTRY_HOST }}/${{ env.IMAGE_NAME }}:${{ github.sha }}|g" | awk 'function flush(){if(!drop&&doc!=""){printf "%s",doc} doc="";drop=0} /^---[ \t\r]*$/{flush();print;next} {doc=doc $0 "\n"; if($0 ~ /^kind:[ \t]+Namespace[ \t\r]*$/)drop=1} END{flush()}' | kubectl apply -f -
+          cd .infrastructure/k8s/overlays/staging
+          kubectl kustomize . | sed "s|image: plex-react:staging-latest|image: ${{ env.REGISTRY_HOST }}/${{ env.IMAGE_NAME }}:${{ github.sha }}|g" | awk 'function flush(){if(!drop&&doc!=""){printf "%s",doc} doc="";drop=0} /^---[ \t\r]*$/{flush();print;next} {doc=doc $0 "\n"; if($0 ~ /^kind:[ \t]+Namespace[ \t\r]*$/)drop=1} END{flush()}' | kubectl apply -f -
           
           # 3. Wait for rollouts
-          kubectl rollout status deployment/web -n plex-react-production --timeout=300s
-          kubectl rollout status deployment/horizon -n plex-react-production --timeout=300s
-          kubectl rollout status deployment/reverb -n plex-react-production --timeout=300s
+          kubectl rollout status deployment/web -n plex-react-staging --timeout=300s
+          kubectl rollout status deployment/horizon -n plex-react-staging --timeout=300s
+          kubectl rollout status deployment/reverb -n plex-react-staging --timeout=300s

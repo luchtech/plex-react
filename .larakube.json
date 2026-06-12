@@ -58,7 +58,42 @@
                 "seaweedfs"
             ],
             "hosts": {
-                "web": "plex-react.luchtech.dev"
+                "web": "plex-react.luchtech.dev",
+                "s3": "plex-seaweed.luchtech.dev",
+                "reverb": "plex-react-ws.luchtech.dev"
+            },
+            "addFeatures": [],
+            "excludeFeatures": [],
+            "namespace": null,
+            "serviceAccount": null,
+            "serviceAccountAnnotations": [],
+            "imagePullSecret": null,
+            "omitImagePullSecret": false,
+            "ingressAnnotations": [],
+            "storageClass": null,
+            "certManagerIssuer": null,
+            "registry": null,
+            "sharedStorage": false,
+            "resources": [],
+            "offline": false
+        },
+        "staging": {
+            "ingress": "traefik",
+            "strategy": null,
+            "managed": [
+                "mariadb",
+                "redis",
+                "seaweedfs"
+            ],
+            "plex": [
+                "mariadb",
+                "redis",
+                "seaweedfs"
+            ],
+            "hosts": {
+                "web": "plex-react-stg.luchtech.dev",
+                "s3": "plex-seaweed.luchtech.dev",
+                "reverb": "plex-react-stg-ws.luchtech.dev"
             },
             "addFeatures": [],
             "excludeFeatures": [],
