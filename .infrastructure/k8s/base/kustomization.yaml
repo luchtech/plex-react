@@ -1,0 +1,10 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - horizon-deployment.yaml
+  - reverb-deployment.yaml
+  - seaweedfs-deployment.yaml
+  - redis-deployment.yaml
+  - mariadb-deployment.yaml
+  - laravel.yaml
