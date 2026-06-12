@@ -1,0 +1,138 @@
+name: LaraKube Cloud Pilot (Deploy to production)
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+env:
+  REGISTRY_HOST: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+  REGISTRY_PROVIDER: ghcr
+
+jobs:
+  deploy:
+    name: 🚀 Build & Deploy
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: 🛰 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 🔍 Resolve & Verify Secrets
+        id: secrets
+        run: |
+          # Robust resolution for KUBECONFIG
+          FINAL_KUBE="${{ secrets.PRODUCTION_KUBECONFIG }}"
+          
+          # Robust resolution for ENV_FILE
+          FINAL_ENV="${{ secrets.PRODUCTION_ENV_FILE_BASE64 }}"
+          
+          if [ -z "$FINAL_KUBE" ]; then
+            echo "::error::PRODUCTION_KUBECONFIG is missing! Run 'larakube cloud:configure gha' locally."
+            exit 1
+          fi
+          
+          if [ -z "$FINAL_ENV" ]; then
+            echo "::error::PRODUCTION_ENV_FILE_BASE64 is missing! Run 'larakube cloud:configure gha' locally."
+            exit 1
+          fi
+          
+          # Securely export using Heredoc to prevent truncation/mangling
+          echo "K_DATA<<EOF" >> $GITHUB_ENV
+          echo "$FINAL_KUBE" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+          
+          echo "E_DATA<<EOF" >> $GITHUB_ENV
+          echo "$FINAL_ENV" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+          
+          echo "✅ All secrets resolved successfully."
+
+      - name: 🕵️ Inspect Cluster Target
+        run: |
+          TARGET_URL=$(echo "$K_DATA" | grep "server:" | awk '{print $2}')
+          echo "🚀 Deployment Target Cluster: $TARGET_URL"
+          
+          if [[ "$TARGET_URL" == *"127.0.0.1"* ]] || [[ "$TARGET_URL" == *"localhost"* ]]; then
+            echo "::error::🚨 FATAL: Kubeconfig is targeting LOCALHOST ($TARGET_URL)!"
+            echo "::error::This usually happens if your local context was active during secret upload."
+            echo "::error::FIX: Run 'larakube cloud:configure gha' again and ensure the CLI extracts your remote context."
+            exit 1
+          fi
+
+      - name: 🔑 Set Kubernetes context
+        uses: azure/k8s-set-context@v3
+        with:
+          method: kubeconfig
+          kubeconfig: ${{ env.K_DATA }}
+
+      - name: 🛡 Create .env file
+        run: |
+          echo "$E_DATA" | base64 -d > .env
+
+      - name: 🔐 Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 🐘 Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.5'
+          extensions: ctype, dom, fileinfo, filter, hash, mbstring, openssl, pcre, pdo, session, tokenizer, xml, zip
+          tools: composer:v2
+
+      - name: 📦 Install Composer dependencies
+        run: composer install --optimize-autoloader --no-interaction --no-progress --ignore-platform-reqs
+
+      - name: 🟢 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: 🛠 Install Node dependencies
+        run: npm install
+
+      - name: 🏎 Generate Wayfinder files
+        run: php artisan wayfinder:generate --with-form
+
+      - name: 💎 Inject VITE vars for asset baking
+        run: |
+          echo "VITE_APP_URL=https://plex-react.luchtech.dev" >> .env
+          echo "VITE_ASSET_URL=https://plex-react.luchtech.dev" >> .env
+
+      - name: 🐳 Build & Push Application Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile.php
+          push: true
+          tags: ${{ env.REGISTRY_HOST }}/${{ env.IMAGE_NAME }}:latest,${{ env.REGISTRY_HOST }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          target: deploy
+          secret-files: |
+            dotenv=.env
+
+      - name: 🏗 Prepare Manifests & Deploy
+        run: |
+          # 1. Update ConfigMap/Secret
+          kubectl create configmap laravel-config -n plex-react-production --from-env-file=.env --dry-run=client -o yaml | kubectl apply -f -
+          kubectl create secret generic laravel-secrets -n plex-react-production --from-env-file=.env --dry-run=client -o yaml | kubectl apply -f -
+
+          # 2. Deploy via Kustomize. The namespace already exists (created at
+          #    `cloud:configure:gha` time), and this runner uses a NAMESPACE-SCOPED
+          #    credential — so strip the cluster-scoped Namespace doc, which the
+          #    scoped ServiceAccount can't apply.
+          cd .infrastructure/k8s/overlays/production
+          kubectl kustomize . | sed "s|image: plex-react:latest|image: ${{ env.REGISTRY_HOST }}/${{ env.IMAGE_NAME }}:${{ github.sha }}|g" | awk 'function flush(){if(!drop&&doc!=""){printf "%s",doc} doc="";drop=0} /^---[ \t\r]*$/{flush();print;next} {doc=doc $0 "\n"; if($0 ~ /^kind:[ \t]+Namespace[ \t\r]*$/)drop=1} END{flush()}' | kubectl apply -f -
+          
+          # 3. Wait for rollouts
+          kubectl rollout status deployment/web -n plex-react-production --timeout=300s
+          kubectl rollout status deployment/horizon -n plex-react-production --timeout=300s
+          kubectl rollout status deployment/reverb -n plex-react-production --timeout=300s

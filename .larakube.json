@@ -57,7 +57,9 @@
                 "redis",
                 "seaweedfs"
             ],
-            "hosts": [],
+            "hosts": {
+                "web": "plex-react.luchtech.dev"
+            },
             "addFeatures": [],
             "excludeFeatures": [],
             "namespace": null,
