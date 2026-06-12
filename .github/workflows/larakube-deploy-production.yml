@@ -20,7 +20,7 @@ jobs:
 
     steps:
       - name: 🛰 Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: 🔍 Resolve & Verify Secrets
         id: secrets
@@ -65,7 +65,7 @@ jobs:
           fi
 
       - name: 🔑 Set Kubernetes context
-        uses: azure/k8s-set-context@v3
+        uses: azure/k8s-set-context@v5
         with:
           method: kubeconfig
           kubeconfig: ${{ env.K_DATA }}
@@ -75,7 +75,7 @@ jobs:
           echo "$E_DATA" | base64 -d > .env
 
       - name: 🔐 Log in to Container Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -92,7 +92,7 @@ jobs:
         run: composer install --optimize-autoloader --no-interaction --no-progress --ignore-platform-reqs
 
       - name: 🟢 Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: '22'
           cache: 'npm'
@@ -114,7 +114,7 @@ jobs:
           echo "VITE_REVERB_APP_KEY=$REVERB_APP_KEY" >> .env
 
       - name: 🐳 Build & Push Application Image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: Dockerfile.php
