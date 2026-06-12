@@ -163,7 +163,7 @@ jobs:
           fi
 
       - name: 🔑 Set Kubernetes context
-        uses: azure/k8s-set-context@v4
+        uses: azure/k8s-set-context@v5
         with:
           method: kubeconfig
           kubeconfig: ${{ env.K_DATA }}
